@@ -1,0 +1,11 @@
+.venv/
+.env
+__pycache__/
+*.pyc
+artifacts/
+models/
+*.safetensors
+*.bin
+results/loadtest_*.csv.tmp
+.pytest_cache/
+.ruff_cache/

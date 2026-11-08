@@ -1,0 +1,74 @@
+name: ci
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      model_tag:
+        description: "Release tag of the model to evaluate (model-v1, or model-bad for the untrained Pythia-70M)"
+        default: model-v1
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - run: pip install ruff==0.8.4
+      - run: ruff check worker service training tests scripts
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: gitleaks
+        run: |
+          curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz | tar xz gitleaks
+          ./gitleaks detect --source . --redact --verbose --exit-code 1
+
+  unit-tests:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11", cache: pip}
+      - run: pip install -r requirements-train.txt
+      - run: SCHEMA_FILE=data/schema.json python -m pytest -v tests
+
+  evaluate:
+    needs: unit-tests
+    runs-on: ubuntu-latest
+    env:
+      MODEL_TAG: ${{ github.event.inputs.model_tag || 'model-v1' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11", cache: pip}
+      - run: pip install -r requirements-train.txt
+      - name: Download model from the GitHub Release
+        env: {GH_TOKEN: "${{ github.token }}"}
+        run: |
+          gh release download "$MODEL_TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.tar.gz' --pattern '*.sha256' --dir release
+          cd release && sha256sum -c *.sha256 && tar xzf *.tar.gz && ls -R
+      - name: Generate predictions and score
+        run: |
+          MODEL_DIR=$(dirname "$(find release -name config.json | head -1)")
+          python training/predict.py "$MODEL_DIR" data/validation.jsonl ci_predictions.jsonl
+          python tools/score.py ci_predictions.jsonl data/validation.jsonl --out ci_report.json
+      - uses: actions/upload-artifact@v4
+        with: {name: evaluation, path: "ci_*.json*"}
+
+  quality-gate:
+    needs: evaluate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: {name: evaluation}
+      - run: python tools/score.py ci_predictions.jsonl data/validation.jsonl --min-validity 95

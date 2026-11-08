@@ -1,0 +1,17 @@
+# Everything `make train` needs. Library versions are the ones pinned in requirements-train.txt.
+version: v2
+base_model: EleutherAI/pythia-70m
+train_file: datasets/v1/train.jsonl
+max_train_examples: 1500     # the first 1,500 records of the cleaned dataset
+seed: 43
+learning_rate: 0.0003
+batch_size: 16
+epochs: 10
+max_seq_length: 96
+weight_decay: 0.0
+warmup_ratio: 0.05
+libraries:
+  python: "3.11"
+  torch: "2.5.1 (CPU wheel)"
+  transformers: "4.46.3"
+  tokenizers: "0.20.3"

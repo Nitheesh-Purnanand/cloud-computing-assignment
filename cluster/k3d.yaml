@@ -1,0 +1,17 @@
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  name: ccproj
+servers: 1
+agents: 1
+image: rancher/k3s:v1.30.6-k3s1
+ports:
+  - port: 8080:80          # Traefik ingress -> http://localhost:8080
+    nodeFilters: [loadbalancer]
+  - port: 8333:30333       # SeaweedFS S3 NodePort -> http://localhost:8333
+    nodeFilters: [server:0]
+options:
+  k3s:
+    extraArgs:
+      - arg: --kubelet-arg=eviction-hard=memory.available<100Mi
+        nodeFilters: [server:*, agent:*]

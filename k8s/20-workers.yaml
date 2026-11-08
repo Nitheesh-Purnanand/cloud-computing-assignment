@@ -1,0 +1,47 @@
+# Two teacher-labelling workers, run at the same time, one per shard.
+# Ollama (phi3.5) runs on the laptop and is reached through host.k3d.internal.
+apiVersion: batch/v1
+kind: Job
+metadata: {name: teacher-shard-0, namespace: pipeline}
+spec:
+  backoffLimit: 3
+  template:
+    metadata: {labels: {app: teacher-worker}}
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: worker
+          image: ccproj-worker:v1
+          imagePullPolicy: Never
+          env:
+            - {name: SHARD_INDEX, value: "0"}
+            - {name: SHARD_COUNT, value: "2"}
+            - {name: S3_ENDPOINT, value: "http://seaweedfs.data.svc.cluster.local:8333"}
+            - {name: OLLAMA_URL, value: "http://host.k3d.internal:11434"}
+          envFrom: [{secretRef: {name: s3-credentials}}]
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 500m, memory: 256Mi}
+---
+apiVersion: batch/v1
+kind: Job
+metadata: {name: teacher-shard-1, namespace: pipeline}
+spec:
+  backoffLimit: 3
+  template:
+    metadata: {labels: {app: teacher-worker}}
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: worker
+          image: ccproj-worker:v1
+          imagePullPolicy: Never
+          env:
+            - {name: SHARD_INDEX, value: "1"}
+            - {name: SHARD_COUNT, value: "2"}
+            - {name: S3_ENDPOINT, value: "http://seaweedfs.data.svc.cluster.local:8333"}
+            - {name: OLLAMA_URL, value: "http://host.k3d.internal:11434"}
+          envFrom: [{secretRef: {name: s3-credentials}}]
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 500m, memory: 256Mi}

@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: parser, namespace: app, labels: {app: parser}}
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxSurge: 1, maxUnavailable: 0}   # never drop below current capacity during an update
+  selector: {matchLabels: {app: parser}}
+  template:
+    metadata: {labels: {app: parser}}
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: parser
+          image: ccproj-parser:latest
+          imagePullPolicy: Never          # imported into k3d by `make image`
+          ports: [{containerPort: 8000, name: http}]
+          env:
+            - {name: MODEL_URI, value: "s3://models/v1/"}
+            - {name: MODEL_VERSION, value: "v1"}
+            - {name: S3_ENDPOINT, value: "http://seaweedfs.data.svc.cluster.local:8333"}
+            - {name: MAX_NEW_TOKENS, value: "48"}
+            - {name: FAULT_INJECT, value: "0"}
+          envFrom: [{secretRef: {name: s3-credentials}}]
+          resources:
+            requests: {cpu: 500m, memory: 512Mi}
+            limits: {cpu: "1", memory: 1Gi}
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 2
+            timeoutSeconds: 3
+            failureThreshold: 2
+          lifecycle:
+            preStop:
+              exec: {command: ["sleep", "5"]}   # let endpoints drop this Pod before it stops
+---
+apiVersion: v1
+kind: Service
+metadata: {name: parser, namespace: app}
+spec:
+  selector: {app: parser}
+  ports: [{name: http, port: 80, targetPort: http}]
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata: {name: parser, namespace: app}
+spec:
+  ingressClassName: traefik
+  rules:
+    - http:
+        paths:
+          - path: /parse
+            pathType: Prefix
+            backend: {service: {name: parser, port: {number: 80}}}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: {name: parser, namespace: app}
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: parser}
+  minReplicas: 1
+  maxReplicas: 2
+  metrics:
+    - type: Resource
+      resource: {name: cpu, target: {type: Utilization, averageUtilization: 70}}
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 60
