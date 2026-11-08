@@ -1,0 +1,9 @@
+HTTP status count:   50 200
+OOMKilled: false  restarts: 0
+./scripts/limits_test.sh: line 24: 36086 Terminated: 15          ( while docker inspect parser-limits > /dev/null 2>&1; do
+    docker stats --no-stream --format '{{.MemUsage}}' parser-limits; sleep 0.5;
+done ) > results/limits_mem_samples.txt 2> /dev/null
+limits: NanoCpus=1000000000 Memory=1073741824
+peak memory sampled: 576MiB
+2026-11-08 21:31:22,855 INFO downloaded model v1 (8 files) from s3://models/v1/ at http://host.docker.internal:8333 in 1.7s
+2026-11-08 21:31:23,550 INFO model v1 loaded, ready

@@ -25,7 +25,7 @@ spec:
           ports: [{containerPort: 8333, name: s3}]
           resources:
             requests: {cpu: 100m, memory: 256Mi}
-            limits: {cpu: "1", memory: 768Mi}
+            limits: {cpu: "1", memory: 2Gi}
           readinessProbe:
             tcpSocket: {port: 8333}
             periodSeconds: 5

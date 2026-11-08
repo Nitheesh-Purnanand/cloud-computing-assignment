@@ -1,0 +1,13 @@
+.venv/bin/python training/train.py --config training/config_v2.yaml 
+1500 examples, 10 epochs, 940 steps -> artifacts/v2
+epoch 1: loss 0.5813 (124s)
+epoch 2: loss 0.3783 (87s)
+epoch 3: loss 0.1958 (69s)
+epoch 4: loss 0.1213 (70s)
+epoch 5: loss 0.0841 (71s)
+epoch 6: loss 0.0578 (54s)
+epoch 7: loss 0.0405 (44s)
+epoch 8: loss 0.0222 (37s)
+epoch 9: loss 0.0109 (35s)
+epoch 10: loss 0.0044 (33s)
+saved model to artifacts/v2, losses to training/loss_v2.csv

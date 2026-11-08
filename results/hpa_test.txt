@@ -1,0 +1,61 @@
+--- load start 21:34:44
+21:34:44 targets=cpu: replicas=2 ready=1
+21:34:54 targets=cpu: replicas=2 ready=1
+21:35:04 targets=cpu: replicas=2 ready=1
+21:35:14 targets=cpu: replicas=2 ready=1
+21:35:24 targets=cpu: replicas=2 ready=1
+21:35:34 targets=cpu: replicas=2 ready=1
+21:35:44 targets=cpu: replicas=2 ready=2
+21:35:54 targets=cpu: replicas=2 ready=2
+21:36:04 targets=cpu: replicas=2 ready=2
+21:36:15 targets=cpu: replicas=2 ready=2
+21:36:25 targets=cpu: replicas=2 ready=2
+21:36:35 targets=cpu: replicas=2 ready=2
+21:36:45 targets=cpu: replicas=2 ready=2
+21:36:55 targets=cpu: replicas=2 ready=2
+21:37:05 targets=cpu: replicas=2 ready=2
+21:37:15 targets=cpu: replicas=2 ready=2
+21:37:25 targets=cpu: replicas=2 ready=2
+21:37:35 targets=cpu: replicas=2 ready=2
+21:37:46 targets=cpu: replicas=2 ready=2
+21:37:56 targets=cpu: replicas=2 ready=2
+21:38:06 targets=cpu: replicas=2 ready=2
+21:38:16 targets=cpu: replicas=2 ready=2
+21:38:26 targets=cpu: replicas=2 ready=2
+21:38:36 targets=cpu: replicas=2 ready=2
+21:38:46 targets=cpu: replicas=2 ready=2
+    "parser-5d6ffb44fd-26q7f": 181
+  },
+  "per_model_version": {
+    "v1": 404
+  }
+}
+--- load stop 21:38:51; waiting for scale-down
+21:38:57 targets=cpu: replicas=2 ready=2
+21:39:07 targets=cpu: replicas=2 ready=2
+21:39:17 targets=cpu: replicas=2 ready=2
+21:39:27 targets=cpu: replicas=2 ready=2
+21:39:37 targets=cpu: replicas=2 ready=2
+21:39:47 targets=cpu: replicas=2 ready=2
+21:39:57 targets=cpu: replicas=2 ready=2
+21:40:07 targets=cpu: replicas=2 ready=2
+21:40:17 targets=cpu: replicas=2 ready=2
+21:40:27 targets=cpu: replicas=2 ready=1
+--- HPA events
+Events:
+  Type     Reason                        Age                 From                       Message
+  ----     ------                        ----                ----                       -------
+  Warning  FailedComputeMetricsReplicas  17m (x12 over 20m)  horizontal-pod-autoscaler  invalid metrics (1 invalid out of 1), first error is: failed to get cpu resource metric value: failed to get cpu utilization: unable to get metrics for resource cpu: no metrics returned from resource metrics API
+  Warning  FailedGetResourceMetric       10m (x41 over 20m)  horizontal-pod-autoscaler  failed to get cpu utilization: unable to get metrics for resource cpu: no metrics returned from resource metrics API
+  Normal   SuccessfulRescale             4m59s               horizontal-pod-autoscaler  New size: 2; reason: cpu resource utilization (percentage of request) above target
+./scripts/hpa_test.sh: line 17: 38371 Terminated: 15          ( while true; do
+    echo "$(date -u +%T) $(kubectl -n app get hpa parser --no-headers | awk '{print "targets="$3, "replicas="$6}') ready=$(kubectl -n app get deploy parser -o jsonpath='{.status.readyReplicas}')"; sleep 10;
+done )
+--- HPA events after scale-down (21:40:58)
+Events:
+  Type     Reason                        Age                 From                       Message
+  ----     ------                        ----                ----                       -------
+  Warning  FailedComputeMetricsReplicas  17m (x12 over 20m)  horizontal-pod-autoscaler  invalid metrics (1 invalid out of 1), first error is: failed to get cpu resource metric value: failed to get cpu utilization: unable to get metrics for resource cpu: no metrics returned from resource metrics API
+  Normal   SuccessfulRescale             5m25s               horizontal-pod-autoscaler  New size: 2; reason: cpu resource utilization (percentage of request) above target
+NAME     REFERENCE           TARGETS       MINPODS   MAXPODS   REPLICAS   AGE
+parser   Deployment/parser   cpu: 0%/70%   1         2         1          20m

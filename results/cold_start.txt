@@ -1,0 +1,47 @@
+=== run 1: deleting all Pods (parser-5d6ffb44fd-9v86f) at 21:34:10
+21:34:11.026 ready endpoints: <none>
+21:34:11.261 ready endpoints: <none>
+21:34:11.498 ready endpoints: <none>
+21:34:11.735 ready endpoints: <none>
+21:34:11.978 ready endpoints: <none>
+21:34:12.219 ready endpoints: <none>
+21:34:12.468 ready endpoints: <none>
+21:34:12.716 ready endpoints: <none>
+21:34:12.959 ready endpoints: <none>
+21:34:13.196 ready endpoints: parser-5d6ffb44fd-77f56 
+parser-5d6ffb44fd-77f56 created 2026-11-08T21:34:11Z ready 2026-11-08T21:34:13Z -> 2s
+2026-11-08 21:34:12,826 INFO downloaded model v1 (8 files) from s3://models/v1/ at http://seaweedfs.data.svc.cluster.local:8333 in 0.4s
+2026-11-08 21:34:13,076 INFO model v1 loaded, ready
+=== run 2: deleting all Pods (parser-5d6ffb44fd-77f56) at 21:34:17
+21:34:17.115 ready endpoints: <none>
+21:34:17.347 ready endpoints: <none>
+21:34:17.584 ready endpoints: <none>
+21:34:17.819 ready endpoints: <none>
+21:34:18.056 ready endpoints: <none>
+21:34:18.294 ready endpoints: <none>
+21:34:18.537 ready endpoints: <none>
+21:34:18.777 ready endpoints: <none>
+21:34:19.017 ready endpoints: <none>
+21:34:19.266 ready endpoints: <none>
+21:34:19.499 ready endpoints: parser-5d6ffb44fd-wvzxq 
+parser-5d6ffb44fd-wvzxq created 2026-11-08T21:34:17Z ready 2026-11-08T21:34:19Z -> 2s
+2026-11-08 21:34:18,724 INFO downloaded model v1 (8 files) from s3://models/v1/ at http://seaweedfs.data.svc.cluster.local:8333 in 0.3s
+2026-11-08 21:34:18,956 INFO model v1 loaded, ready
+=== run 3: deleting all Pods (parser-5d6ffb44fd-wvzxq) at 21:34:23
+21:34:23.294 ready endpoints: <none>
+21:34:23.528 ready endpoints: <none>
+21:34:23.766 ready endpoints: <none>
+21:34:23.998 ready endpoints: <none>
+21:34:24.236 ready endpoints: <none>
+21:34:24.470 ready endpoints: <none>
+21:34:24.714 ready endpoints: <none>
+21:34:24.950 ready endpoints: <none>
+21:34:25.192 ready endpoints: <none>
+21:34:25.437 ready endpoints: <none>
+21:34:25.671 ready endpoints: parser-5d6ffb44fd-c2vb2 
+parser-5d6ffb44fd-c2vb2 created 2026-11-08T21:34:23Z ready 2026-11-08T21:34:25Z -> 2s
+2026-11-08 21:34:24,969 INFO downloaded model v1 (8 files) from s3://models/v1/ at http://seaweedfs.data.svc.cluster.local:8333 in 0.4s
+2026-11-08 21:34:25,188 INFO model v1 loaded, ready
+cold-start times (s): 2 2 2 
+median (s): 2
+note: Kubernetes timestamps have 1 s resolution.

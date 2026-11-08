@@ -1,0 +1,36 @@
+--- kubectl top pods 21:41:34
+NAME                      CPU(cores)   MEMORY(bytes)   
+parser-5d6ffb44fd-c2vb2   4m           391Mi           
+parser-5d6ffb44fd-trnhl   777m         446Mi           
+--- kubectl top pods 21:41:45
+NAME                      CPU(cores)   MEMORY(bytes)   
+parser-5d6ffb44fd-c2vb2   684m         450Mi           
+parser-5d6ffb44fd-trnhl   998m         549Mi           
+--- kubectl top pods 21:41:55
+NAME                      CPU(cores)   MEMORY(bytes)   
+parser-5d6ffb44fd-c2vb2   998m         494Mi           
+parser-5d6ffb44fd-trnhl   997m         455Mi           
+--- kubectl top pods 21:42:05
+NAME                      CPU(cores)   MEMORY(bytes)   
+parser-5d6ffb44fd-c2vb2   998m         494Mi           
+parser-5d6ffb44fd-trnhl   997m         455Mi           
+--- kubectl top pods 21:42:15
+NAME                      CPU(cores)   MEMORY(bytes)   
+parser-5d6ffb44fd-c2vb2   999m         463Mi           
+parser-5d6ffb44fd-trnhl   997m         455Mi           
+--- kubectl top pods 21:42:25
+NAME                      CPU(cores)   MEMORY(bytes)   
+parser-5d6ffb44fd-c2vb2   997m         458Mi           
+parser-5d6ffb44fd-trnhl   997m         550Mi           
+--- kubectl top pods 21:42:35
+NAME                      CPU(cores)   MEMORY(bytes)   
+parser-5d6ffb44fd-c2vb2   997m         458Mi           
+parser-5d6ffb44fd-trnhl   997m         550Mi           
+--- kubectl top pods 21:42:45
+NAME                      CPU(cores)   MEMORY(bytes)   
+parser-5d6ffb44fd-c2vb2   997m         476Mi           
+parser-5d6ffb44fd-trnhl   997m         464Mi           
+--- kubectl top pods 21:42:55
+NAME                      CPU(cores)   MEMORY(bytes)   
+parser-5d6ffb44fd-c2vb2   998m         545Mi           
+parser-5d6ffb44fd-trnhl   998m         465Mi           
