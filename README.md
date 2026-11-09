@@ -54,3 +54,9 @@ tests/                    unit tests (pytest)
 results/                  score reports, raw outputs, logs, load-test files
 tools/, data/             course kit (unchanged)
 ```
+
+## Report and evidence
+
+- `report/report.pdf` (source `report/report.html`; regenerate with headless Chrome `--print-to-pdf`)
+- `report/RESULTS.md`: every measured number with the file it comes from
+- CI quality gate failing on the untrained model: https://github.com/Nitheesh-Purnanand/cloud-computing-assignment/actions/runs/42552350446

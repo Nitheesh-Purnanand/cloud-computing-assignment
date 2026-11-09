@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Cloud Computing Mini Project Report</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm; }
+  body { font-family: "Helvetica Neue", Arial, sans-serif; font-size: 9.6pt; line-height: 1.38; color: #111; }
+  h1 { font-size: 16pt; margin: 0 0 2pt; }
+  h2 { font-size: 12pt; margin: 12pt 0 4pt; border-bottom: 1px solid #999; padding-bottom: 1pt; }
+  h3 { font-size: 10pt; margin: 7pt 0 2pt; }
+  p { margin: 3pt 0; }
+  ul { margin: 2pt 0 4pt 16pt; padding: 0; }
+  li { margin: 1pt 0; }
+  table { border-collapse: collapse; width: 100%; margin: 4pt 0 6pt; font-size: 8.8pt; page-break-inside: avoid; }
+  th, td { border: 1px solid #aaa; padding: 2pt 4pt; text-align: left; vertical-align: top; }
+  th { background: #eee; }
+  td.n, th.n { text-align: right; }
+  code { font-family: Menlo, Consolas, monospace; font-size: 8.4pt; }
+  .meta { color: #444; margin-bottom: 6pt; }
+  .tag { font-size: 8pt; font-weight: bold; color: #555; }
+  pre { font-family: Menlo, monospace; font-size: 7.8pt; background: #f4f4f4; padding: 4pt; margin: 3pt 0; white-space: pre; }
+</style>
+</head>
+<body>
+
+<h1>Knowledge Distillation and Deployment of a Command-Parsing Model on a Local Cloud</h1>
+<p class="meta">CS3081 Cloud Computing, Mini Project &middot; Repository:
+<code>https://github.com/Nitheesh-Purnanand/cloud-computing-assignment</code><br>
+Every number in this report is measured and comes from a file in <code>results/</code>; assumptions are marked
+<span class="tag">[ASSUMPTION]</span>. Hardware: one MacBook Air (Apple silicon, 10 cores, 16 GB), Docker via Colima
+(6 vCPU, 10 GB), k3d cluster <code>ccproj</code> (1 server + 1 agent).</p>
+
+<h3>Architecture</h3>
+<pre>laptop: Ollama phi3.5 (teacher, Metal GPU)           laptop: training (PyTorch, CPU) -> artifacts/ -> GitHub Release
+          ^ host.k3d.internal:11434                                        |  publish_model.py
+k3d cluster  -------------------------------------------------------------v--------------------------------
+ ns pipeline: Jobs teacher-shard-0, teacher-shard-1  --->  ns data: SeaweedFS (S3)  buckets datasets, models
+ ns app: Ingress /parse (Traefik, :8080) -> Service -> Deployment parser (2 Pods, HPA 1-2) -- start-up download --^</pre>
+
+<h2>Task 1: Object storage and parallel teacher labelling</h2>
+<p><b>Setup.</b> The cluster is created from <code>cluster/k3d.yaml</code> (port 8080 to Traefik, 8333 to the S3 NodePort).
+SeaweedFS runs as one Pod in namespace <code>data</code> (master, volume, filer and S3 gateway in one process, PVC on
+local-path). S3 credentials are generated into a git-ignored <code>.env</code> and loaded into Secrets by
+<code>scripts/secrets.sh</code>. <code>scripts/s3_setup.py</code> creates the buckets <code>datasets</code> and <code>models</code>
+and uploads <code>commands_pool.jsonl</code>. The teacher (phi3.5 in Ollama, temperature 0, seed 42) runs on the laptop to use
+its GPU; workers reach it through <code>host.k3d.internal</code>. The few-shot prompt is <code>prompts/teacher_prompt.txt</code>
+(examples taken only from the handout, none from validation).</p>
+<p><b>Sharding.</b> Worker <i>k</i> of <i>N</i> processes the commands whose 0-based line number <i>n</i> satisfies
+<i>n</i> mod <i>N</i> = <i>k</i>. Every <i>n</i> has exactly one remainder, so the shards are disjoint and together cover the
+file, with no coordination between workers. Round-robin assignment also balances the shards (1,500 each for <i>N</i> = 2)
+even if command difficulty drifts along the file. Each worker writes only its own object
+<code>datasets/teacher/shard-k.jsonl</code>, so there are no write conflicts. Progress is flushed every 25 records, and a
+restarted worker skips ids already stored, so a crash costs at most 25 teacher calls. Two Jobs (<code>teacher-shard-0/1</code>,
+<code>SHARD_COUNT=2</code>) ran at the same time in namespace <code>pipeline</code> (about 47 minutes, 0 restarts). Check:
+3,000 ids in the shard outputs, 3,000 unique, identical to the pool.</p>
+<p><b>Cleaning</b> (<code>worker/clean.py</code>; rejects checked in the order a&ndash;e; output in id order; checksum
+<code>d0f4fc58&hellip;752d</code>, reproduced by <code>python worker/clean.py --local datasets/teacher</code>):</p>
+<table>
+<tr><th class="n">Input</th><th class="n">(a) not JSON</th><th class="n">(b) wrong keys</th><th class="n">(c) bad intent</th><th class="n">(d) slot not in command</th><th class="n">Duplicates</th><th class="n">Kept</th></tr>
+<tr><td class="n">3,000</td><td class="n">589</td><td class="n">0</td><td class="n">4</td><td class="n">138</td><td class="n">31</td><td class="n">2,238</td></tr>
+</table>
+<p>3,000 = 589 + 0 + 4 + 138 + 31 + 2,238. Nearly all (a) rejects are a correct JSON object followed by a note
+(&ldquo;(Note: &hellip;)&rdquo;); they are rejected because replies are stored exactly as generated.</p>
+<p><b>Problem found.</b> phi3.5 sometimes generated thousands of tokens (Ollama log: <code>n_gen = 2417</code>), which blocked both
+workers. I added <code>num_predict: 128</code> (a valid reply needs about 30 tokens), deleted the partial shards and relabelled
+everything, so all 3,000 replies come from one configuration.</p>
+
+<h2>Task 2: Training the student (sequence-level distillation)</h2>
+<p><b>Setup.</b> <code>make train</code> runs <code>training/train.py</code>, which reads only <code>training/config.yaml</code>
+(seed 42, learning rate 3e-4, batch 16, 8 epochs, max length 96, library versions; the seed and deterministic algorithms are set
+in code). Each example is <code>Command: &lt;text&gt;\nJSON: &lt;teacher reply&gt;&lt;eos&gt;</code>, and the loss covers the reply
+tokens only. The first 1,500 cleaned records are used; <code>make train SUBSET=50</code> trains on 50 (about 2.5 minutes). Loss per
+epoch is in <code>training/loss.csv</code> (0.619 &rarr; 0.009). v2 (<code>training/config_v2.yaml</code>: seed 43, 10 epochs) is
+in <code>training/loss_v2.csv</code>. Model and tokenizer files are in <code>s3://models/v1/</code> and <code>s3://models/v2/</code>.
+<code>scripts/publish_model.py</code> builds a deterministic tarball; its SHA-256 is stored as <code>models/v1/model.sha256</code> and
+equals the checksum of the GitHub Release asset <code>model-v1.tar.gz</code> (<code>4cffa3eb&hellip;85aa</code>; CI checks it with
+<code>sha256sum -c</code>).</p>
+<p><b>Suitability of Pythia-70M.</b> It is small enough to train on a CPU (about 1.5 minutes per epoch) and to serve within
+1 CPU / 1 GiB, and its GPT-NeoX tokenizer handles JSON punctuation. It has no instruction tuning and little world knowledge, so
+untrained it produces no valid output at all (table below); everything it does here comes from fine-tuning on one narrow format.</p>
+<table>
+<tr><th>Model (validation.jsonl, 100 commands)</th><th class="n">JSON valid</th><th class="n">Intent</th><th class="n">Date</th><th class="n">Time</th><th class="n">Place</th><th class="n">Full frame</th></tr>
+<tr><td>Teacher phi3.5 (<code>teacher_validation.json</code>)</td><td class="n">75.0</td><td class="n">67.0</td><td class="n">55.0</td><td class="n">65.0</td><td class="n">72.0</td><td class="n">41.0</td></tr>
+<tr><td>Pythia-70M untrained (<code>pythia_base_validation.json</code>)</td><td class="n">0.0</td><td class="n">0.0</td><td class="n">0.0</td><td class="n">0.0</td><td class="n">0.0</td><td class="n">0.0</td></tr>
+<tr><td>Student v1, deployed (<code>student_validation.json</code>)</td><td class="n">100.0</td><td class="n">88.0</td><td class="n">76.0</td><td class="n">85.0</td><td class="n">85.0</td><td class="n">48.0</td></tr>
+<tr><td>Student v2 (<code>student_v2_validation.json</code>)</td><td class="n">100.0</td><td class="n">83.0</td><td class="n">74.0</td><td class="n">85.0</td><td class="n">81.0</td><td class="n">40.0</td></tr>
+</table>
+<p><b>What changed.</b> Fine-tuning took Pythia from 0% to 100% JSON validity. The student even beats the teacher on full frame
+(48 vs 41), mainly because it was trained only on replies that passed cleaning: it never learned the teacher's habit of adding notes
+(25% of teacher outputs on validation were invalid), and the copy-from-command filter removed invented slots. Where the teacher is
+consistently wrong (for example <code>date: "this afternoon"</code>), the student copies the mistake. v2 trained longer and fits the
+training set more closely (final loss 0.004) but scores lower, a sign of overfitting, so v1 is deployed.</p>
+<h3>Sequence-level versus logit-based distillation</h3>
+<ul>
+<li><b>Sequence-level</b> (Kim and Rush, 2016), used here: the student is trained with ordinary cross-entropy on the <i>text the
+teacher generated</i> (its decoded output sequence), treated as hard target tokens.</li>
+<li><b>Logit-based</b> (word-level) distillation trains the student to match the teacher's <i>full probability distribution over the
+vocabulary</i> at every position (soft targets, usually a temperature-scaled KL divergence), which also carries information about
+the alternatives the teacher considered.</li>
+<li><b>Why it is not possible here:</b> Ollama returns only the generated text, not per-token distributions. phi3.5 and Pythia also
+use different tokenizers and vocabularies (about 32k vs 50k tokens), so there is no token-by-token correspondence to match even if
+the logits were exported; and it would require running both models together during training.</li>
+<li><b>Limitation of this approach:</b> the student can only be as good as the teacher's single greedy answer. Teacher errors that
+pass the cleaning filters (wrong intent, wrong but present slot text) are learned as truth, and the commands whose replies were
+invalid are simply lost, which biases the training data towards commands the teacher found easy.</li>
+</ul>
+
+<h2>Task 3: The inference service in a container</h2>
+<p><b>Design.</b> FastAPI (<code>service/app.py</code>) on port 8000. At start-up a background thread downloads every file under
+<code>MODEL_URI</code> from <code>S3_ENDPOINT</code> (credentials from the Secret <code>s3-credentials</code> via <code>envFrom</code>) and
+loads the model. <code>/readyz</code> returns 503 until then, <code>/healthz</code> always 200; a failed load exits the process so
+Kubernetes restarts it. <code>POST /parse</code> runs greedy generation (<code>MAX_NEW_TOKENS</code>, one thread, one request at a time),
+keeps the first line and validates it against <code>schema.json</code> with <code>jsonschema</code>. Invalid output returns HTTP 500
+<code>{"error": "invalid_model_output"}</code>, never broken JSON with 200. Headers: <code>X-Model-Version</code> =
+<code>MODEL_VERSION</code>, <code>X-Served-By</code> = Pod hostname. <code>FAULT_INJECT=1</code> replaces the output with
+<code>not json</code> before validation.</p>
+<p><b>Image.</b> <code>python:3.11.10-slim</code>, CPU-only PyTorch wheel, every package pinned (<code>service/requirements.txt</code> is the
+full <code>pip freeze</code>), no weights, non-root user; 1.27 GB. Built with one command: <code>make image</code>.</p>
+<p><b>Measured</b> (<code>results/limits_test.txt</code>, <code>results/fault_inject.txt</code>): <code>docker run --cpus 1 --memory 1g</code>,
+50 sequential requests: 50 &times; HTTP 200, <code>OOMKilled: false</code>, <b>peak memory 576 MiB</b> (sampled with
+<code>docker stats</code>). With <code>FAULT_INJECT=1</code> in the cluster: HTTP 500 with the exact error body.</p>
+
+<h2>Task 4: Kubernetes deployment, scaling and reliability</h2>
+<p><b>Manifests</b> (<code>k8s/30-app.yaml</code>): Deployment <code>parser</code> (2 replicas; requests 500m / 512Mi, limits 1 CPU / 1Gi;
+liveness <code>/healthz</code>; readiness <code>/readyz</code> every 2 s; <code>maxSurge 1, maxUnavailable 0</code>; a 5 s preStop sleep so
+endpoints drop a Pod before it stops), ClusterIP Service, Traefik Ingress for <code>/parse</code>, and an HPA (min 1, max 2, 70% CPU
+of the request). Each test is reproduced by a script in <code>scripts/</code>.</p>
+<table>
+<tr><th>Test</th><th>Result (measured)</th><th>Evidence</th></tr>
+<tr><td>Readiness gating</td><td>The EndpointSlice lists no ready endpoint for about 2 s after each Pod starts, until the model is loaded</td><td><code>cold_start.txt</code></td></tr>
+<tr><td>Cold start (3 runs)</td><td>2 s, 2 s, 2 s from Pod creation to Ready; <b>median 2 s</b>. Logs: <code>downloaded model v1 (8 files) from s3://models/v1/ &hellip; in 0.4s</code></td><td><code>cold_start.txt</code></td></tr>
+<tr><td>HPA</td><td>From 1 replica under load: <code>SuccessfulRescale New size: 2</code>; after the load stopped, back to 1 replica (cpu 0%/70%)</td><td><code>hpa_test.txt</code></td></tr>
+<tr><td>Rolling update v1&rarr;v2, then <code>rollout undo</code></td><td>395 requests, 1 failed (<b>0.25%</b>, an HTTP 500 invalid-output answer, not a dropped connection); 94 served by v2; after the undo every response has <code>X-Model-Version: v1</code></td><td><code>rolling_update.txt</code></td></tr>
+<tr><td>Recovery</td><td>One Pod deleted under load: ready replicas 1 &rarr; 2 in about 7 s; 192 requests, 0 failed</td><td><code>recovery.txt</code></td></tr>
+<tr><td>Load balancing (2 Ready, standard command)</td><td>112 and 112 successful requests (50% each)</td><td><code>loadtest_headers.json</code></td></tr>
+</table>
+<p><b>Limitations.</b> The whole cluster runs on one laptop inside one Docker VM. The two &ldquo;nodes&rdquo; are containers on the same
+machine, so this shows Pod-level self-healing, not fault tolerance across machines; losing the laptop loses everything, including
+the single-replica SeaweedFS. Cold start is short because the image is pre-imported on the nodes and the 280 MB model comes from
+in-cluster storage <span class="tag">[ASSUMPTION: a registry pull and remote storage would add tens of seconds]</span>. metrics-server
+needs about a minute before the HPA sees CPU (<code>FailedGetResourceMetric</code> events at start). With at most 2 replicas and a
+1-CPU limit, scaling can only double capacity. To get exactly two Ready replicas for a test, the scripts set HPA
+<code>minReplicas</code> to 2 temporarily and restore it afterwards.</p>
+
+<h2>Task 5: Subnetting and network access control</h2>
+<table>
+<tr><th>Subnet</th><th class="n">Hosts</th><th>Network / prefix</th><th>Usable range</th><th>Broadcast</th><th class="n">Usable</th></tr>
+<tr><td>app</td><td class="n">1,000</td><td>10.20.0.0/22</td><td>10.20.0.1 &ndash; 10.20.3.254</td><td>10.20.3.255</td><td class="n">1,022</td></tr>
+<tr><td>public</td><td class="n">250</td><td>10.20.4.0/24</td><td>10.20.4.1 &ndash; 10.20.4.254</td><td>10.20.4.255</td><td class="n">254</td></tr>
+<tr><td>data</td><td class="n">100</td><td>10.20.5.0/25</td><td>10.20.5.1 &ndash; 10.20.5.126</td><td>10.20.5.127</td><td class="n">126</td></tr>
+<tr><td>management</td><td class="n">20</td><td>10.20.5.128/27</td><td>10.20.5.129 &ndash; 10.20.5.158</td><td>10.20.5.159</td><td class="n">30</td></tr>
+</table>
+<p>The working is in <code>network/subnets.md</code> (smallest prefix with 2<sup>32&minus;p</sup> &minus; 2 &ge; hosts, largest first,
+contiguous). NACL for the public subnet (<code>network/nacl.json</code>): inbound 100 deny all from 198.51.100.0/24; 110 allow TCP 80 and
+120 allow TCP 443 from 0.0.0.0/0; 130 allow TCP 22 from 10.20.5.128/27; 140 allow TCP 1024&ndash;65535 from 10.20.0.0/22 (app replies).
+Outbound 100 allow TCP 8000 to 10.20.0.0/22; 110 allow TCP 1024&ndash;65535 to 0.0.0.0/0 (replies to clients). Everything else hits the
+default deny. <code>nacl_sim.py --check</code> on the sample packets: 6/6.</p>
+<p><b>Why replies need their own rules.</b> A NACL is stateless: it does not remember that a connection was opened, so every packet,
+including a reply, is checked on its own. The response to a client's request on port 443 leaves towards the client's ephemeral port,
+and the app's answer to the load balancer arrives on the load balancer's ephemeral port, so both directions need explicit rules for
+1024&ndash;65535. <b>Why order matters.</b> Rules are evaluated from the lowest number and the first match wins. A packet from
+198.51.100.9 to port 443 also matches allow rule 120; the deny works only because its number (100) is lower than every allow rule it
+must override.</p>
+
+<h2>Task 6: Reproducibility, testing and CI/CD</h2>
+<p><code>make up</code> (venv, cluster, SeaweedFS with buckets and data, service image imported into k3d, models v1/v2 into S3 from local
+artifacts or the GitHub Releases, deploy) brings the system up after <code>git clone</code> and <code>cd</code>: three commands in total.
+<code>make down</code> runs <code>k3d cluster delete</code>. The workflow <code>.github/workflows/ci.yml</code> runs <b>lint</b> (ruff)
+&rarr; <b>unit tests</b> (8 pytest tests: rejection reasons and counts, duplicates, shard coverage, API headers, <code>FAULT_INJECT</code>,
+schema rejection, probes) &rarr; <b>evaluate</b> (downloads the model tarball from the GitHub Release, checks its SHA-256, runs
+<code>predict.py</code> and <code>score.py</code> on <code>validation.jsonl</code>) &rarr; <b>quality gate</b>
+(<code>score.py --min-validity 95</code>), plus a <b>gitleaks</b> scan of the full history (no leaks). The run for <code>model-v1</code>
+passed every stage. The gate was shown working with the untrained Pythia-70M, published as release <code>model-bad</code>: run
+<code>https://github.com/Nitheesh-Purnanand/cloud-computing-assignment/actions/runs/42552350446</code> passes lint, tests and evaluation
+and fails at the quality gate with <code>QUALITY GATE FAILED: json_validity 0.0 &lt; 95.0</code>. AI use is described in
+<code>AI_USE.md</code>.</p>
+
+<h2>Task 7: Performance, cost and review</h2>
+<p><b>Measured</b> with the standard Locust command through the Ingress, 2 Ready replicas (<code>results/loadtest_stats.csv</code>,
+<code>loadtest_top_pods.txt</code>): 222 requests (CSV; the console summary shows 224), 0 failures (<b>error rate 0%</b>),
+<b>p50 2,100 ms, p95 2,500 ms, 1.87 requests/s</b>; each Pod about 997m CPU (at its 1-core limit) and 464&ndash;545 MiB memory;
+cold start median 2 s (Task 4).</p>
+<p><b>Cost</b> (rate card, billed on limits): one replica = 1 vCPU &times; 3.50 + 1 GiB &times; 0.45 = 3.95 INR/h; two replicas = 7.90 INR/h.
+Requests per hour = 1.8713 &times; 3,600 = 6,737. Cost per 1,000 requests = 7.90 / 6,737 &times; 1,000 = <b>1.17 INR</b>.
+<span class="tag">[ASSUMPTION: only the parser replicas are billed; SeaweedFS, the control plane and the teacher are excluded.]</span></p>
+<p><b>SLO.</b> 99% of <code>POST /parse</code> requests return HTTP 200 within 30 s, over one standard load-test run. Error budget =
+1% &times; 222 = 2.22, so 2 failed requests are allowed; 0 were used (0% of the budget). In the rolling-update run the same SLO allows
+3 failures out of 395; 1 was used (33%).</p>
+<table>
+<tr><th>Concern</th><th>Evidence (measured)</th><th>Limitation found</th><th>Improvement proposed</th></tr>
+<tr><td>Data and storage</td><td>589 of 3,000 teacher replies (19.6%) rejected as invalid JSON</td><td>A fifth of the teacher time is wasted; the single-Pod SeaweedFS was OOMKilled at 768 Mi during a 280 MB upload</td><td>A stop sequence or JSON-constrained decoding for the teacher; SeaweedFS with separate, replicated volume servers</td></tr>
+<tr><td>Model quality</td><td>Full frame 48% (teacher 41%); date accuracy 76%</td><td>Slot boundaries are learned from a noisy teacher; consistent teacher errors are copied</td><td>A better prompt or larger teacher, more cleaned data, a check that slot text occurs in the command</td></tr>
+<tr><td>Latency and throughput</td><td>p95 2,500 ms, 1.87 req/s with 2 replicas</td><td>One request at a time per Pod; greedy generation on one CPU</td><td>Request batching, int8 or ONNX Runtime inference, stopping generation at the first newline</td></tr>
+<tr><td>Resource utilisation</td><td>About 997m CPU and &le; 545 MiB per Pod under load; 576 MiB peak at a 1 GiB limit</td><td>CPU-bound at the limit while about half the memory limit is unused</td><td>Lower the memory limit to 768 Mi; autoscale on request rate or latency instead of CPU</td></tr>
+<tr><td>Reliability and recovery</td><td>0.25% failed during the rollout; replica restored in about 7 s with 0 failures</td><td>Single machine: no protection against node or disk loss</td><td>Multi-node cluster, PodDisruptionBudget, Pod anti-affinity, replicated storage</td></tr>
+<tr><td>Security and cost</td><td>1.17 INR per 1,000 requests; gitleaks: no leaks</td><td>One static S3 admin key is shared by every namespace; idle replicas are still billed</td><td>Per-namespace least-privilege S3 identities; scale to zero when idle</td></tr>
+</table>
+
+<h2>References</h2>
+<p>Kim and Rush, Sequence-Level Knowledge Distillation, EMNLP 2016. Bastianelli et al., SLURP, EMNLP 2020 (data, CC BY 4.0).
+EleutherAI, Pythia-70M model card. Documentation of k3d, k3s, Kubernetes, SeaweedFS, Hugging Face Transformers, FastAPI, Locust,
+GitHub Actions and gitleaks (links in the project handout).</p>
+</body>
+</html>
