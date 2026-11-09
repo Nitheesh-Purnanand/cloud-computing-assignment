@@ -1,0 +1,31 @@
+[2026-11-09 03:17:52,595] Charans-MacBook-Air/INFO/locust.main: Starting Locust 2.32.4
+[2026-11-09 03:17:52,597] Charans-MacBook-Air/INFO/locust.main: Run time limit set to 120 seconds
+[2026-11-09 03:17:52,597] Charans-MacBook-Air/INFO/locust.runners: Ramping to 4 users at a rate of 4.00 per second
+[2026-11-09 03:17:52,597] Charans-MacBook-Air/INFO/locust.runners: All users spawned: {"ParserUser": 4} (4 total users)
+[2026-11-09 03:19:52,456] Charans-MacBook-Air/INFO/locust.main: --run-time limit reached, shutting down
+[2026-11-09 03:19:52,477] Charans-MacBook-Air/INFO/locust.main: Shutting down (exit code 0)
+Type     Name                                                                          # reqs      # fails |    Avg     Min     Max    Med |   req/s  failures/s
+--------|----------------------------------------------------------------------------|-------|-------------|-------|-------|-------|-------|--------|-----------
+POST     /parse                                                                           193     0(0.00%) |   2459     953    5324   2500 |    1.61        0.00
+--------|----------------------------------------------------------------------------|-------|-------------|-------|-------|-------|-------|--------|-----------
+         Aggregated                                                                       193     0(0.00%) |   2459     953    5324   2500 |    1.61        0.00
+
+Response time percentiles (approximated)
+Type     Name                                                                                  50%    66%    75%    80%    90%    95%    98%    99%  99.9% 99.99%   100% # reqs
+--------|--------------------------------------------------------------------------------|--------|------|------|------|------|------|------|------|------|------|------|------
+POST     /parse                                                                               2500   2900   3200   3300   3600   3800   4400   5200   5300   5300   5300    193
+--------|--------------------------------------------------------------------------------|--------|------|------|------|------|------|------|------|------|------|------|------
+         Aggregated                                                                           2500   2900   3200   3300   3600   3800   4400   5200   5300   5300   5300    193
+
+
+Successful requests by header:
+{
+  "per_replica": {
+    "parser-5d6ffb44fd-bz95z": 25,
+    "parser-5d6ffb44fd-sqhfv": 98,
+    "parser-5d6ffb44fd-85zx4": 70
+  },
+  "per_model_version": {
+    "v1": 193
+  }
+}

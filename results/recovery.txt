@@ -1,0 +1,16 @@
+--- 21:48:22 deleting parser-5d6ffb44fd-bz95z
+NAME                      READY   STATUS    RESTARTS   AGE
+parser-5d6ffb44fd-bz95z   1/1     Running   0          3m15s
+parser-5d6ffb44fd-sqhfv   1/1     Running   0          3m20s
+pod "parser-5d6ffb44fd-bz95z" deleted from app namespace
+21:48:22 desired=2 ready=1
+21:48:29 desired=2 ready=2
+--- 21:49:25 after recovery
+NAME                      READY   STATUS    RESTARTS   AGE
+parser-5d6ffb44fd-85zx4   1/1     Running   0          63s
+parser-5d6ffb44fd-sqhfv   1/1     Running   0          4m23s
+--- locust summary
+POST     /parse                                                                           193     0(0.00%) |   2459     953    5324   2500 |    1.61        0.00
+         Aggregated                                                                       193     0(0.00%) |   2459     953    5324   2500 |    1.61        0.00
+POST     /parse                                                                               2500   2900   3200   3300   3600   3800   4400   5200   5300   5300   5300    193
+         Aggregated                                                                           2500   2900   3200   3300   3600   3800   4400   5200   5300   5300   5300    193

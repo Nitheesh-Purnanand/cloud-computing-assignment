@@ -1,0 +1,17 @@
+--- FAULT_INJECT=1 on pod/parser-74b4b456f9-4xwq4
+HTTP/1.1 500 Internal Server Error
+X-Model-Version: v1
+X-Served-By: parser-74b4b456f9-4xwq4
+{"error":"invalid_model_output"}
+HTTP/1.1 500 Internal Server Error
+X-Model-Version: v1
+X-Served-By: parser-74b4b456f9-4xwq4
+{"error":"invalid_model_output"}
+--- FAULT_INJECT=0 on pod/parser-5d6ffb44fd-z259x
+HTTP/1.1 200 OK
+X-Model-Version: v1
+X-Served-By: parser-5d6ffb44fd-z259x
+{"intent":"weather_query","date":null,"time":null,"place":"london"}
+--- probes:
+healthz 200 {"status":"alive"}
+readyz 200 {"status":"ready","model_version":"v1"}
